@@ -1,30 +1,33 @@
-# Helios-Core
+# HellMC-Core
 
-A library containing core mechanisms for Helios Launcher
+**HellMC-Core** is a modified fork of [helios-core](https://github.com/dscalzi/helios-core) by
+Daniel D. Scalzi ([LGPL-3.0-only](LICENSE)), core mechanisms for the HellMC client.
+
+See `CHANGES.md` for the list of changes made relative to upstream `helios-core`.
 
 ### Requirements
 
 * Node.js 22 (minimum)
 
-helios-core will always use the same minimum node version as Helios Launcher.
+### Auth
 
-## Auth
-
-### Supported Auth Providers
+#### Supported Auth Providers
 
 * Mojang
 * Microsoft
 
-### Provider Information
+#### Provider Information
 
-#### Mojang
+##### Mojang
 
 Mojang authentication makes use of the Yggdrasil scheme. See https://wiki.vg/Authentication
 
-#### Microsoft
+##### Microsoft
 
 Microsoft authentication uses OAuth 2.0 with Azure. See https://wiki.vg/Microsoft_Authentication_Scheme
 
-### LICENSE
+### License
 
-LGPL-3.0
+**LGPL-3.0-only** — unchanged from upstream (a condition of the license). See `LICENSE` and
+`NOTICE`. This library ships as a separate module (never bundled/obfuscated into a single
+renderer bundle) so it can be replaced with a modified build, per LGPL §4.

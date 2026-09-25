@@ -15,7 +15,7 @@ export type FullRepairTransmission = ValidateTransmission | DownloadTransmission
 
 export interface ValidateTransmission {
     action: 'validate'
-    serverId: string
+    versionId: string
     launcherDirectory: string
     commonDirectory: string
     instanceDirectory: string
@@ -106,15 +106,15 @@ export class FullRepairReceiver implements Receiver {
         )
     
         const distribution = await api.getDistributionLocalLoadOnly()
-        const server = distribution.getServerById(message.serverId)!
+        const version = distribution.getVersionById(message.versionId)!
 
         const mojangIndexProcessor = new MojangIndexProcessor(
             message.commonDirectory,
-            server.rawServer.minecraftVersion)
+            version.rawVersion.minecraftVersion)
         const distributionIndexProcessor = new DistributionIndexProcessor(
             message.commonDirectory,
             distribution,
-            message.serverId
+            message.versionId
         )
 
         this.processors = [

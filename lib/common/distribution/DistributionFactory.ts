@@ -1,4 +1,4 @@
-import { Distribution, Server, Module, Type, Required as HeliosRequired, JavaVersionProps, JavaPlatformOptions, Platform, JdkDistribution } from 'helios-distribution-types'
+import { Distribution, Version, Module, Type, TypeMetadata, Required as HeliosRequired, JavaPlatformOptions, Platform, JdkDistribution } from 'hellmc-distribution-types'
 import { MavenComponents, MavenUtil } from '../util/MavenUtil'
 import { join } from 'path'
 import { LoggerUtil } from '../../util/LoggerUtil'
@@ -6,91 +6,65 @@ import { mcVersionAtLeast } from '../util/MojangUtils'
 
 const logger = LoggerUtil.getLogger('DistributionFactory')
 
+/**
+ * Merge helper for `JavaOptions`/`JavaPlatformOptions` resolution. Not part of
+ * the wire format (see `hellmc-distribution-types`), purely an internal
+ * accumulator for {@link HeliosVersion.parseEffectiveJavaOptions}.
+ */
+interface JavaVersionProps {
+    distribution?: JdkDistribution
+    supported?: string
+    suggestedMajor?: number
+}
+
 export class HeliosDistribution {
 
-    private mainServerIndex!: number
-
-    public readonly servers: HeliosServer[]
+    public readonly versions: HeliosVersion[]
 
     constructor(
         public readonly rawDistribution: Distribution,
         commonDir: string,
         instanceDir: string
     ) {
-        this.resolveMainServerIndex()
-        this.servers = this.rawDistribution.servers.map(s => new HeliosServer(s, commonDir, instanceDir))
-    }
-
-    private resolveMainServerIndex(): void {
-
-        if(this.rawDistribution.servers.length > 0) {
-            for(let i=0; i<this.rawDistribution.servers.length; i++) {
-                if(this.mainServerIndex == null) {
-                    if(this.rawDistribution.servers[i].mainServer) {
-                        this.mainServerIndex = i
-                    }
-                } else {
-                    this.rawDistribution.servers[i].mainServer = false
-                }
-            }
-            if(this.mainServerIndex == null) {
-                this.mainServerIndex = 0
-                this.rawDistribution.servers[this.mainServerIndex].mainServer = true
-            }
-        } else {
-            logger.warn('Distribution has 0 configured servers. This doesnt seem right..')
-            this.mainServerIndex = 0
+        if(this.rawDistribution.versions.length === 0) {
+            logger.warn('Distribution has 0 configured versions. This doesnt seem right..')
         }
+        this.versions = this.rawDistribution.versions.map(v => new HeliosVersion(v, commonDir, instanceDir))
     }
 
-    public getMainServer(): HeliosServer | null {
-        return this.mainServerIndex < this.servers.length ? this.servers[this.mainServerIndex] : null
+    /**
+     * Fase 0: there is no `Server` catalog yet to mark a "main"/recommended
+     * entry, so the first published version (by the distribution's own
+     * `sortOrder`) is the default. Superseded in fase 1 by `Server.mainServer`
+     * + the server's `recommended` version.
+     */
+    public getMainVersion(): HeliosVersion | null {
+        return this.versions.length > 0 ? this.versions[0] : null
     }
 
-    public getServerById(id: string): HeliosServer | null {
-        return this.servers.find(s => s.rawServer.id === id) || null
+    public getVersionById(id: string): HeliosVersion | null {
+        return this.versions.find(v => v.rawVersion.id === id) || null
     }
 
 }
 
-export class HeliosServer {
+export class HeliosVersion {
 
     public readonly modules: HeliosModule[]
-    public readonly hostname: string
-    public readonly port: number
     public readonly effectiveJavaOptions: Required<JavaVersionProps>
 
     constructor(
-        public readonly rawServer: Server,
+        public readonly rawVersion: Version,
         commonDir: string,
         instanceDir: string
     ) {
-        const { hostname, port } = this.parseAddress()
-        this.hostname = hostname
-        this.port = port
         this.effectiveJavaOptions = this.parseEffectiveJavaOptions()
-        this.modules = rawServer.modules.map(m => new HeliosModule(m, rawServer.id, commonDir, instanceDir))
-    }
-
-    private parseAddress(): { hostname: string, port: number } {
-        // Srv record lookup here if needed.
-        if(this.rawServer.address.includes(':')) {
-            const pieces = this.rawServer.address.split(':')
-            const port = Number(pieces[1])
-
-            if(!Number.isInteger(port)) {
-                throw new Error(`Malformed server address for ${this.rawServer.id}. Port must be an integer!`)
-            }
-
-            return { hostname: pieces[0], port }
-        } else {
-            return { hostname: this.rawServer.address, port: 25565 }
-        }
+        this.modules = rawVersion.modules.map(m => new HeliosModule(m, rawVersion.id, commonDir, instanceDir))
     }
 
     private parseEffectiveJavaOptions(): Required<JavaVersionProps> {
 
-        const options: JavaPlatformOptions[] = this.rawServer.javaOptions?.platformOptions ?? []
+        const options: JavaPlatformOptions[] = this.rawVersion.javaOptions?.platformOptions ?? []
 
         const mergeableProps: JavaVersionProps[] = []
         for(const option of options) {
@@ -104,9 +78,9 @@ export class HeliosServer {
             }
         }
         mergeableProps[3] = {
-            distribution: this.rawServer.javaOptions?.distribution,
-            supported: this.rawServer.javaOptions?.supported,
-            suggestedMajor: this.rawServer.javaOptions?.suggestedMajor
+            distribution: this.rawVersion.javaOptions?.distribution,
+            supported: this.rawVersion.javaOptions?.supported,
+            suggestedMajor: this.rawVersion.javaOptions?.suggestedMajor
         }
 
         const merged: JavaVersionProps = {}
@@ -131,9 +105,9 @@ export class HeliosServer {
     }
 
     private defaultJavaVersion(): [string, number] {
-        if(mcVersionAtLeast('1.20.5', this.rawServer.minecraftVersion)) {
+        if(mcVersionAtLeast('1.20.5', this.rawVersion.minecraftVersion)) {
             return ['>=21.x', 21]
-        } else if(mcVersionAtLeast('1.17', this.rawServer.minecraftVersion)) {
+        } else if(mcVersionAtLeast('1.17', this.rawVersion.minecraftVersion)) {
             return ['>=17.x', 17]
         } else {
             return ['8.x', 8]
@@ -143,7 +117,7 @@ export class HeliosServer {
     private defaultJavaPlatform(): JdkDistribution {
         return process.platform === Platform.DARWIN ? JdkDistribution.CORRETTO : JdkDistribution.TEMURIN
     }
- 
+
 }
 
 export class HeliosModule {
@@ -156,7 +130,7 @@ export class HeliosModule {
 
     constructor(
         public readonly rawModule: Module,
-        private readonly serverId: string,
+        private readonly versionId: string,
         commonDir: string,
         instanceDir: string
     ) {
@@ -166,11 +140,11 @@ export class HeliosModule {
         this.localPath = this.resolveLocalPath(commonDir, instanceDir)
 
         if(this.rawModule.subModules != null) {
-            this.subModules = this.rawModule.subModules.map(m => new HeliosModule(m, serverId, commonDir, instanceDir))
+            this.subModules = this.rawModule.subModules.map(m => new HeliosModule(m, versionId, commonDir, instanceDir))
         } else {
             this.subModules = []
         }
-        
+
     }
 
     private resolveMavenComponents(): MavenComponents {
@@ -199,7 +173,7 @@ export class HeliosModule {
         } catch(err) {
             throw new Error(`Failed to resolve maven components for module ${this.rawModule.name} (${this.rawModule.id}) of type ${this.rawModule.type}. Reason: ${(err as Error).message}`)
         }
-        
+
     }
 
     private resolveRequired(): Required<HeliosRequired> {
@@ -231,24 +205,12 @@ export class HeliosModule {
             this.mavenComponents.extension
         )
 
-        switch (this.rawModule.type) {
-            case Type.Library:
-            case Type.Forge:
-            case Type.ForgeHosted:
-            case Type.Fabric:
-            case Type.LiteLoader:
-                return join(commonDir, 'libraries', relativePath)
-            case Type.ForgeMod:
-            case Type.LiteMod:
-                // TODO Move to /mods/forge eventually..
-                return join(commonDir, 'modstore', relativePath)
-            case Type.FabricMod:
-                return join(commonDir, 'mods', 'fabric', relativePath)
-            case Type.File:
-            default:
-                return join(instanceDir, this.serverId, relativePath) 
+        const meta = TypeMetadata[this.rawModule.type]
+        if(meta.storage === 'instance' || meta.baseDirectory == null) {
+            return join(instanceDir, this.versionId, relativePath)
         }
-        
+        return join(commonDir, meta.baseDirectory, relativePath)
+
     }
 
     public hasMavenComponents(): boolean {

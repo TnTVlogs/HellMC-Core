@@ -1,11 +1,11 @@
-import { Server } from 'helios-distribution-types'
+import { Version } from 'hellmc-distribution-types'
 
-export function getMainServer(servers: Server[]): Server {
-
-    const mainServer = servers.find(({ mainServer }) => mainServer)
-    if(mainServer == null && servers.length > 0) {
-        return servers[0]
-    }
-
-    return mainServer!
+/**
+ * Modified by HellMC (TnTVlogs), 2026-09-25: renamed from `getMainServer`.
+ * Fase 0: `Version` carries no "main" flag any more (moved to the `Server`
+ * catalog, fase 1) — the first version in the array (the distribution's own
+ * `sortOrder`) is used as the default.
+ */
+export function getMainVersion(versions: Version[]): Version {
+    return versions[0]
 }

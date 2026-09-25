@@ -1,7 +1,7 @@
 import { exec } from 'child_process'
 import { pathExists, readdir } from 'fs-extra'
 import got from 'got'
-import { Architecture, JdkDistribution, Platform } from 'helios-distribution-types'
+import { Architecture, JdkDistribution, Platform } from 'hellmc-distribution-types'
 import { dirname, join } from 'path'
 import { promisify } from 'util'
 import { LauncherJson } from '../model/mojang/LauncherJson'

@@ -1,6 +1,7 @@
 export interface Asset {
     id: string
-    hash: string
+    /** Omitted for untracked files (see `hellmc-distribution-types`' `Artifact.MD5`): validation is skipped. */
+    hash?: string
     algo: string
     size: number
     url: string

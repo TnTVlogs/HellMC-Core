@@ -65,7 +65,7 @@ export class FullRepair extends BaseTransmitter {
         private commonDirectory: string,
         private instanceDirectory: string,
         private launcherDirectory: string,
-        private serverId: string,
+        private versionId: string,
         private devMode: boolean
     ) {
         super()
@@ -107,7 +107,7 @@ export class FullRepair extends BaseTransmitter {
                 commonDirectory: this.commonDirectory,
                 instanceDirectory: this.instanceDirectory,
                 launcherDirectory: this.launcherDirectory,
-                serverId: this.serverId,
+                versionId: this.versionId,
                 devMode: this.devMode
             } as ValidateTransmission)
         })

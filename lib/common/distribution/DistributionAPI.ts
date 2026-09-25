@@ -1,5 +1,5 @@
 import { resolve } from 'path'
-import { Distribution } from 'helios-distribution-types'
+import { Distribution } from 'hellmc-distribution-types'
 import got, { RequestError } from 'got'
 import { LoggerUtil } from '../../util/LoggerUtil'
 import { RestResponse, handleGotError, RestResponseStatus } from '../rest/RestResponse'
@@ -112,7 +112,19 @@ export class DistributionAPI {
 
         try {
 
-            const res = await got.get<Distribution>(this.remoteUrl, { responseType: 'json' })
+            // Modified by HellMC (TnTVlogs), 2026-09-25: bound the remote distribution
+            // fetch with an explicit timeout instead of relying on got's defaults.
+            const res = await got.get<Distribution>(this.remoteUrl, {
+                responseType: 'json',
+                timeout: {
+                    lookup: 10000,
+                    connect: 10000,
+                    secureConnect: 10000,
+                    socket: 15000,
+                    send: 10000,
+                    response: 15000
+                }
+            })
 
             return {
                 data: res.body,

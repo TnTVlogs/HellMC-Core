@@ -3,8 +3,8 @@ import { IndexProcessor } from '../IndexProcessor'
 import { AssetGuardError } from '../AssetGuardError'
 import { validateLocalFile, getVersionJsonPath} from '../../common/util/FileUtils'
 import { Asset, HashAlgo } from '../Asset'
-import { HeliosDistribution, HeliosModule, HeliosServer } from '../../common/distribution/DistributionFactory'
-import { Type } from 'helios-distribution-types'
+import { HeliosDistribution, HeliosModule, HeliosVersion } from '../../common/distribution/DistributionFactory'
+import { Type } from 'hellmc-distribution-types'
 import { mcVersionAtLeast } from '../../common/util/MojangUtils'
 import { ensureDir, readJson, writeJson } from 'fs-extra'
 import StreamZip from 'node-stream-zip'
@@ -15,7 +15,7 @@ export class DistributionIndexProcessor extends IndexProcessor {
 
     private static readonly logger = LoggerUtil.getLogger('DistributionIndexProcessor')
 
-    constructor(commonDir: string, protected distribution: HeliosDistribution, protected serverId: string) {
+    constructor(commonDir: string, protected distribution: HeliosDistribution, protected versionId: string) {
         super(commonDir)
     }
 
@@ -28,14 +28,14 @@ export class DistributionIndexProcessor extends IndexProcessor {
     }
 
     public async validate(onStageComplete: () => Promise<void>): Promise<{[category: string]: Asset[]}> {
-        
-        const server: HeliosServer = this.distribution.getServerById(this.serverId)!
-        if(server == null) {
-            throw new AssetGuardError(`Invalid server id ${this.serverId}`)
+
+        const version: HeliosVersion = this.distribution.getVersionById(this.versionId)!
+        if(version == null) {
+            throw new AssetGuardError(`Invalid version id ${this.versionId}`)
         }
 
         const notValid: Asset[] = []
-        await this.validateModules(server.modules, notValid)
+        await this.validateModules(version.modules, notValid)
         await onStageComplete()
 
         return {
@@ -54,7 +54,7 @@ export class DistributionIndexProcessor extends IndexProcessor {
             if(!await validateLocalFile(module.getPath(), HashAlgo.MD5, hash)) {
                 accumulator.push({
                     id: module.rawModule.id,
-                    hash: hash!,
+                    hash: hash,
                     algo: HashAlgo.MD5,
                     size: module.rawModule.artifact.size,
                     url: module.rawModule.artifact.url,
@@ -70,19 +70,19 @@ export class DistributionIndexProcessor extends IndexProcessor {
 
     public async loadModLoaderVersionJson(): Promise<VersionJsonBase> {
 
-        const server: HeliosServer = this.distribution.getServerById(this.serverId)!
-        if(server == null) {
-            throw new AssetGuardError(`Invalid server id ${this.serverId}`)
+        const version: HeliosVersion = this.distribution.getVersionById(this.versionId)!
+        if(version == null) {
+            throw new AssetGuardError(`Invalid version id ${this.versionId}`)
         }
 
-        const modLoaderModule = server.modules.find(({ rawModule: { type } }) => type === Type.ForgeHosted || type === Type.Forge || type === Type.Fabric)
+        const modLoaderModule = version.modules.find(({ rawModule: { type } }) => type === Type.ForgeHosted || type === Type.Forge || type === Type.Fabric)
 
         if(modLoaderModule == null) {
             throw new AssetGuardError('No mod loader found!')
         }
 
         if(modLoaderModule.rawModule.type === Type.Fabric
-            || DistributionIndexProcessor.isForgeGradle3(server.rawServer.minecraftVersion, modLoaderModule.getMavenComponents().version)) {
+            || DistributionIndexProcessor.isForgeGradle3(version.rawVersion.minecraftVersion, modLoaderModule.getMavenComponents().version)) {
             return await this.loadVersionManifest<VersionJsonBase>(modLoaderModule)
         } else {
 
@@ -92,16 +92,16 @@ export class DistributionIndexProcessor extends IndexProcessor {
 
                 const data = JSON.parse((await zip.entryData('version.json')).toString('utf8')) as VersionJsonBase
                 const writePath = getVersionJsonPath(this.commonDir, data.id)
-    
+
                 await ensureDir(dirname(writePath))
                 await writeJson(writePath, data)
-    
+
                 return data
             }
             finally {
                 await zip.close()
             }
-            
+
         }
     }
 
@@ -122,7 +122,7 @@ export class DistributionIndexProcessor extends IndexProcessor {
         }
 
         try {
-            
+
             const forgeVer = forgeVersion.split('-')[1]
 
             const maxFG2 = [14, 23, 5, 2847]
@@ -135,7 +135,7 @@ export class DistributionIndexProcessor extends IndexProcessor {
                     return false
                 }
             }
-        
+
             return false
 
         } catch(err) {

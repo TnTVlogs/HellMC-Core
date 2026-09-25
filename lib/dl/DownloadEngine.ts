@@ -1,5 +1,5 @@
 import { createWriteStream, WriteStream } from 'fs'
-import got, { Progress, ReadError, RequestError } from 'got'
+import got, { Progress, ReadError, RequestError, TimeoutError } from 'got'
 import { pipeline } from 'stream/promises'
 import { Asset } from './Asset'
 import * as fastq from 'fastq'
@@ -64,7 +64,18 @@ export async function downloadFile(url: string, path: string, onProgress?: (prog
         }
 
         try {
-            const downloadStream = got.stream(url)
+            // Modified by HellMC (TnTVlogs), 2026-09-25: bound stalled/unresponsive
+            // downloads with an explicit timeout instead of hanging indefinitely.
+            const downloadStream = got.stream(url, {
+                timeout: {
+                    lookup: 10000,
+                    connect: 10000,
+                    secureConnect: 10000,
+                    socket: 30000,
+                    send: 10000,
+                    response: 10000
+                }
+            })
 
             fileWriterStream = createWriteStream(path)
 
@@ -113,6 +124,10 @@ export async function downloadFile(url: string, path: string, onProgress?: (prog
 }
 
 function retryableError(error: Error): boolean {
+    if(error instanceof TimeoutError) {
+        // Stalled/unresponsive connection (no data within the configured timeout).
+        return true
+    }
     if(error instanceof RequestError) {
         // error.name === 'RequestError' means server did not respond.
         return error.name === 'RequestError' || error instanceof ReadError && error.code === 'ECONNRESET'
