@@ -1,4 +1,4 @@
-import { Distribution, Version, Module, Type, TypeMetadata, Required as HeliosRequired, JavaPlatformOptions, Platform, JdkDistribution } from 'hellmc-distribution-types'
+import { Distribution, Version, Module, Server, Type, TypeMetadata, Required as HeliosRequired, JavaPlatformOptions, Platform, JdkDistribution } from 'hellmc-distribution-types'
 import { MavenComponents, MavenUtil } from '../util/MavenUtil'
 import { join } from 'path'
 import { LoggerUtil } from '../../util/LoggerUtil'
@@ -20,6 +20,11 @@ interface JavaVersionProps {
 export class HeliosDistribution {
 
     public readonly versions: HeliosVersion[]
+    /**
+     * The server catalog (fase 1, 01 §3.2/§4). Plain `Server` DTOs straight from the wire format —
+     * unlike `Version`, a server has no modules/files to resolve into a richer wrapper class.
+     */
+    public readonly servers: Server[]
 
     constructor(
         public readonly rawDistribution: Distribution,
@@ -30,13 +35,14 @@ export class HeliosDistribution {
             logger.warn('Distribution has 0 configured versions. This doesnt seem right..')
         }
         this.versions = this.rawDistribution.versions.map(v => new HeliosVersion(v, commonDir, instanceDir))
+        this.servers = this.rawDistribution.servers ?? []
     }
 
     /**
-     * Fase 0: there is no `Server` catalog yet to mark a "main"/recommended
-     * entry, so the first published version (by the distribution's own
-     * `sortOrder`) is the default. Superseded in fase 1 by `Server.mainServer`
-     * + the server's `recommended` version.
+     * Fallback default when no `Server` applies (D4, "play without a server"): the first published
+     * version by the distribution's own `sortOrder`. For the fase-1 "preselect on first launch"
+     * behaviour (D18: main server's recommended version), callers should check
+     * {@link getMainServer} first and only fall back to this.
      */
     public getMainVersion(): HeliosVersion | null {
         return this.versions.length > 0 ? this.versions[0] : null
@@ -44,6 +50,31 @@ export class HeliosDistribution {
 
     public getVersionById(id: string): HeliosVersion | null {
         return this.versions.find(v => v.rawVersion.id === id) || null
+    }
+
+    public getServerById(id: string): Server | null {
+        return this.servers.find(s => s.id === id) || null
+    }
+
+    /** At most one server should have `mainServer: true` (01 §3.3 rule 2); `null` if none does. */
+    public getMainServer(): Server | null {
+        return this.servers.find(s => s.mainServer) || null
+    }
+
+    /** Versions offered by a server, in the server's own catalog order. Unknown ids are skipped. */
+    public getVersionsOf(serverId: string): HeliosVersion[] {
+        const server = this.getServerById(serverId)
+        if(server == null) {
+            return []
+        }
+        return server.versions
+            .map(v => this.getVersionById(v.id))
+            .filter((v): v is HeliosVersion => v != null)
+    }
+
+    /** Servers that offer a given version, in distribution order. */
+    public getServersOf(versionId: string): Server[] {
+        return this.servers.filter(s => s.versions.some(v => v.id === versionId))
     }
 
 }

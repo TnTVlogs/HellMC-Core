@@ -1,6 +1,6 @@
 # Changes from upstream `helios-core`
 
-Fase 0 — fork & rename (see `docs/newDocs/client-redesign/` in `HellMC-Client`).
+Fase 0 — fork & rename (see `docs/client-redesign/` in `HellMC-Client`).
 
 - **Absorbed patches** previously applied via `patch-package` on the client
   (`patches/helios-core+2.3.0.patch`): explicit `got` timeouts on
@@ -24,6 +24,17 @@ Fase 0 — fork & rename (see `docs/newDocs/client-redesign/` in `HellMC-Client`
 - IPC message field `serverId` → `versionId` (`FullRepairReceiver`,
   `AssetGaurdTransmitter`).
 - Package renamed `helios-core` → `hellmc-core`, version `3.0.0-hellmc.1`.
+
+Fase 1 — server catalog (see `docs/client-redesign/` in `HellMC-Client`).
+
+- **`HeliosDistribution` now exposes the `Server` catalog**: `servers` (plain
+  `Server[]`, no wrapper class needed — a server has no modules/files to
+  resolve, unlike a version), `getServerById(id)`, `getMainServer()` (the
+  server with `mainServer: true`, if any), `getVersionsOf(serverId)` and
+  `getServersOf(versionId)` (01 §6). `getMainVersion()` is unchanged (still the
+  fase-0 "no server applies" fallback, first published version); callers
+  implementing D18 (preselect main server + its recommended version) should
+  check `getMainServer()` first and fall back to `getMainVersion()`.
 
 ## Consumption note
 
