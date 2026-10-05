@@ -1,5 +1,5 @@
 import { createHash } from 'crypto'
-import { dirname, join } from 'path'
+import { dirname, isAbsolute, join, relative, resolve } from 'path'
 import { pathExists, createReadStream, remove, unlink } from 'fs-extra'
 import { LoggerUtil } from '../..//util/LoggerUtil'
 import { StreamZipAsync } from 'node-stream-zip'
@@ -66,14 +66,27 @@ export async function extractZip(zipPath: string, peek?: (zip: StreamZipAsync) =
     }
 
     try {
+        const outDir = dirname(zipPath)
+
+        // Zip-slip guard: every entry must stay inside the extraction folder.
+        const entries = await zip.entries()
+        for(const name of Object.keys(entries)) {
+            const rel = relative(outDir, resolve(outDir, name))
+            if(rel.startsWith('..') || isAbsolute(rel)) {
+                throw new Error(`Unsafe path inside archive: ${name}`)
+            }
+        }
+
         log.info(`Extracting ${zipPath}`)
-        await zip.extract(null, dirname(zipPath))
+        await zip.extract(null, outDir)
         log.info(`Removing ${zipPath}`)
         await remove(zipPath)
         log.info('Zip extraction complete.')
 
     } catch(err) {
         log.error('Zip extraction failed', err)
+        // Do not report success: a half-extracted JDK would otherwise be registered as "installed".
+        throw err
     } finally {
         await zip.close()
     }

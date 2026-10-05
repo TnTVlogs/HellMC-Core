@@ -22,6 +22,7 @@ export interface AbstractTokenRequest {
 export interface AuthTokenRequest extends AbstractTokenRequest {
     grant_type: 'authorization_code'
     code: string
+    code_verifier?: string
 }
 /**
  * Request body for getting a Microsoft OAuth Access Token by refreshing
@@ -163,12 +164,13 @@ export class MicrosoftAuth {
      * @param code Authorization Code or Refresh Token
      * @param refresh True if this is a refresh, false otherwise.
      * @param clientId The Azure Application (client) ID.
+     * @param codeVerifier PKCE code verifier (RFC 7636) matching the `code_challenge` sent when the code was requested.
      * @returns A MicrosoftResponse for this operation.
      * 
      * @see https://wiki.vg/Microsoft_Authentication_Scheme#Authorization_Code_-.3E_Authorization_Token
      * @see https://wiki.vg/Microsoft_Authentication_Scheme#Refreshing_Tokens
      */
-    public static async getAccessToken(code: string, refresh: boolean, clientId: string): Promise<MicrosoftResponse<AuthorizationTokenResponse | null>> {
+    public static async getAccessToken(code: string, refresh: boolean, clientId: string, codeVerifier?: string): Promise<MicrosoftResponse<AuthorizationTokenResponse | null>> {
         try {
 
             const BASE_FORM: AbstractTokenRequest = {
@@ -188,7 +190,8 @@ export class MicrosoftAuth {
                 form = {
                     ...BASE_FORM,
                     code: code,
-                    grant_type: 'authorization_code'
+                    grant_type: 'authorization_code',
+                    ...(codeVerifier != null ? { code_verifier: codeVerifier } : {})
                 } as AuthTokenRequest
             }
 

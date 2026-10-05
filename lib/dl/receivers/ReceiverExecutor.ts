@@ -27,7 +27,7 @@ process.on('message', async message => {
         let displayable = undefined
         try {
             log.error('Asking the reciever for more details (if available):')
-            displayable = await receiver.parseError(err)
+            displayable = (await receiver.parseError(err)) ?? (err instanceof Error ? err.message : undefined)
             if (displayable) {
                 log.error(`Receiver replied with ${displayable}`)
             } else {

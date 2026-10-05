@@ -3,8 +3,10 @@ import { Distribution } from 'hellmc-distribution-types'
 import got, { RequestError } from 'got'
 import { LoggerUtil } from '../../util/LoggerUtil'
 import { RestResponse, handleGotError, RestResponseStatus } from '../rest/RestResponse'
-import { pathExists, readFile, writeJson } from 'fs-extra'
+import { move, pathExists, readFile, remove, writeJson } from 'fs-extra'
 import { HeliosDistribution } from './DistributionFactory'
+import { DistributionVerifier } from './DistributionSignature'
+import { writeFile } from 'fs/promises'
 
 // TODO Option to check endpoint for hash of distro for local compare
 // Useful if distro is large (MBs)
@@ -27,16 +29,31 @@ export class DistributionAPI {
         private commonDir: string,
         private instanceDir: string,
         private remoteUrl: string,
-        private devMode: boolean
+        private devMode: boolean,
+        // S1: when set, the distribution must carry a valid detached signature (`<url>.sig`) or it is ignored.
+        private verifier: DistributionVerifier | null = null
     ) {
         this.distroPath = resolve(launcherDirectory, this.DISTRO_FILE)
         this.distroDevPath = resolve(launcherDirectory, this.DISTRO_FILE_DEV)
     }
 
+    // Memoized so concurrent first callers share ONE fetch (and one write of distribution.json).
+    private initialLoad: Promise<HeliosDistribution> | null = null
+
     public async getDistribution(): Promise<HeliosDistribution> {
-        if(this.rawDistribution == null) {
-            this.rawDistribution = await this.loadDistribution()
-            this.distribution = new HeliosDistribution(this.rawDistribution, this.commonDir, this.instanceDir)
+        if(this.distribution == null) {
+            this.initialLoad = this.initialLoad ?? (async (): Promise<HeliosDistribution> => {
+                try {
+                    const raw = await this.loadDistribution()
+                    const built = new HeliosDistribution(raw, this.commonDir, this.instanceDir)
+                    this.rawDistribution = raw
+                    this.distribution = built
+                    return built
+                } finally {
+                    this.initialLoad = null
+                }
+            })()
+            return await this.initialLoad
         }
         return this.distribution
     }
@@ -61,8 +78,10 @@ export class DistributionAPI {
             DistributionAPI.log.warn('Failed to refresh distribution, falling back to current load (if exists).')
             return this.distribution
         } else {
+            // Build first, assign after: a distribution that cannot be built must not replace the working one.
+            const built = new HeliosDistribution(distro, this.commonDir, this.instanceDir)
             this.rawDistribution = distro
-            this.distribution = new HeliosDistribution(distro, this.commonDir, this.instanceDir)
+            this.distribution = built
 
             return this.distribution
         }
@@ -95,6 +114,12 @@ export class DistributionAPI {
         if(!this.devMode) {
 
             distro = (await this.pullRemote()).data
+            if(distro != null && !this.isUsable(distro)) {
+                // A 200 whose body is not a usable distribution (error page as JSON, half-published file...) must NEVER
+                // overwrite the good local copy.
+                DistributionAPI.log.error('Remote distribution is not usable, ignoring it and using the local copy.')
+                distro = null
+            }
             if(distro == null) {
                 distro = await this.pullLocal()
             } else {
@@ -108,7 +133,14 @@ export class DistributionAPI {
         return distro
     }
 
+    /** Raw bytes + signature of the last verified remote download, written to disk verbatim so they can be re-verified. */
+    private lastVerified: { raw: Buffer, signature: Buffer } | null = null
+
     protected async pullRemote(): Promise<RestResponse<Distribution | null>> {
+
+        if(this.verifier != null) {
+            return await this.pullRemoteVerified()
+        }
 
         try {
 
@@ -139,8 +171,60 @@ export class DistributionAPI {
         
     }
 
+    /** Structural check + trial build (HeliosDistribution skips individual broken versions but needs the basics). */
+    protected isUsable(distro: unknown): distro is Distribution {
+        if(distro == null || typeof distro !== 'object') {
+            return false
+        }
+        const d = distro as Partial<Distribution>
+        if(!Array.isArray(d.versions) || (d.servers != null && !Array.isArray(d.servers))) {
+            return false
+        }
+        try {
+            const built = new HeliosDistribution(d as Distribution, this.commonDir, this.instanceDir)
+            // The file declares versions but every one of them is broken: not usable.
+            return d.versions.length === 0 || built.versions.length > 0
+        } catch(err) {
+            DistributionAPI.log.error('Distribution could not be built.', err)
+            return false
+        }
+    }
+
+    protected async pullRemoteVerified(): Promise<RestResponse<Distribution | null>> {
+        const timeout = { lookup: 10000, connect: 10000, secureConnect: 10000, socket: 15000, send: 10000, response: 15000 }
+        try {
+            const [file, sig] = await Promise.all([
+                got.get(this.remoteUrl, { responseType: 'buffer', timeout }),
+                got.get(`${this.remoteUrl}.sig`, { responseType: 'buffer', timeout })
+            ])
+            const signature = Buffer.from(sig.body.toString('utf8').trim(), 'base64')
+            if(!this.verifier!.verify(file.body, signature)) {
+                DistributionAPI.log.error('SECURITY: the remote distribution signature is INVALID. Ignoring it.')
+                return { data: null, responseStatus: RestResponseStatus.ERROR } as RestResponse<Distribution | null>
+            }
+            this.lastVerified = { raw: file.body, signature }
+            return { data: JSON.parse(file.body.toString('utf8')) as Distribution, responseStatus: RestResponseStatus.SUCCESS }
+        } catch(error) {
+            return handleGotError('Pull Remote (verified)', error as RequestError, DistributionAPI.log, () => null)
+        }
+    }
+
     protected async writeDistributionToDisk(distribution: Distribution): Promise<void> {
-        await writeJson(this.distroPath, distribution)
+        // Atomic: a crash mid-write must not leave a truncated distribution.json.
+        const tmp = `${this.distroPath}.tmp`
+        try {
+            if(this.lastVerified != null) {
+                // Verbatim bytes + signature, so the local copy can be verified again when read.
+                await writeFile(`${this.distroPath}.sig`, this.lastVerified.signature.toString('base64'))
+                await writeFile(tmp, this.lastVerified.raw)
+            } else {
+                await writeJson(tmp, distribution)
+            }
+            await move(tmp, this.distroPath, { overwrite: true })
+        } catch(err) {
+            await remove(tmp).catch(() => { /* nothing to clean */ })
+            throw err
+        }
     }
 
     protected async pullLocal(): Promise<Distribution | null> {
@@ -150,7 +234,17 @@ export class DistributionAPI {
     protected async readDistributionFromFile(path: string): Promise<Distribution | null> {
 
         if(await pathExists(path)) {
-            const raw = await readFile(path, 'utf-8')
+            const rawBytes = await readFile(path)
+            if(this.verifier != null && !this.devMode) {
+                const sigPath = `${path}.sig`
+                const valid = await pathExists(sigPath)
+                    && this.verifier.verify(rawBytes, Buffer.from((await readFile(sigPath, 'utf-8')).trim(), 'base64'))
+                if(!valid) {
+                    DistributionAPI.log.error(`SECURITY: local distribution at ${path} has no valid signature. Ignoring it.`)
+                    return null
+                }
+            }
+            const raw = rawBytes.toString('utf-8')
             try {
                 return JSON.parse(raw) as Distribution
             } catch(error) {

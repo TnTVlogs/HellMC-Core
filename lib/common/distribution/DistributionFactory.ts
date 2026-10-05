@@ -1,10 +1,23 @@
 import { Distribution, Version, Module, Server, Type, TypeMetadata, Required as HeliosRequired, JavaPlatformOptions, Platform, JdkDistribution } from 'hellmc-distribution-types'
 import { MavenComponents, MavenUtil } from '../util/MavenUtil'
-import { join } from 'path'
+import { isAbsolute, join, relative, sep } from 'path'
 import { LoggerUtil } from '../../util/LoggerUtil'
 import { mcVersionAtLeast } from '../util/MojangUtils'
 
 const logger = LoggerUtil.getLogger('DistributionFactory')
+
+/**
+ * `path.join` that never leaves `base`. Paths in the distribution (artifact paths, version ids) are data from a remote
+ * file; a `../` must not be able to write outside the game folders.
+ */
+export function safeJoin(base: string, ...parts: string[]): string {
+    const joined = join(base, ...parts)
+    const rel = relative(base, joined)
+    if(rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel)) {
+        throw new Error(`Unsafe path in distribution: ${parts.join('/')}`)
+    }
+    return joined
+}
 
 /**
  * Merge helper for `JavaOptions`/`JavaPlatformOptions` resolution. Not part of
@@ -34,7 +47,15 @@ export class HeliosDistribution {
         if(this.rawDistribution.versions.length === 0) {
             logger.warn('Distribution has 0 configured versions. This doesnt seem right..')
         }
-        this.versions = this.rawDistribution.versions.map(v => new HeliosVersion(v, commonDir, instanceDir))
+        // One broken version (unknown module type, bad maven id...) must not make every other version unusable.
+        this.versions = []
+        for(const v of this.rawDistribution.versions) {
+            try {
+                this.versions.push(new HeliosVersion(v, commonDir, instanceDir))
+            } catch(err) {
+                logger.error(`Skipping invalid version '${v?.id}': ${(err as Error).message}`)
+            }
+        }
         this.servers = this.rawDistribution.servers ?? []
     }
 
@@ -225,7 +246,7 @@ export class HeliosModule {
 
         // Version Manifests have a pre-determined path.
         if(this.rawModule.type === Type.VersionManifest) {
-            return join(commonDir, 'versions', this.rawModule.id, `${this.rawModule.id}.json`)
+            return safeJoin(commonDir, 'versions', this.rawModule.id, `${this.rawModule.id}.json`)
         }
 
         const relativePath = this.rawModule.artifact.path ?? MavenUtil.mavenComponentsAsNormalizedPath(
@@ -238,9 +259,9 @@ export class HeliosModule {
 
         const meta = TypeMetadata[this.rawModule.type]
         if(meta.storage === 'instance' || meta.baseDirectory == null) {
-            return join(instanceDir, this.versionId, relativePath)
+            return safeJoin(safeJoin(instanceDir, this.versionId), relativePath)
         }
-        return join(commonDir, meta.baseDirectory, relativePath)
+        return safeJoin(safeJoin(commonDir, meta.baseDirectory), relativePath)
 
     }
 

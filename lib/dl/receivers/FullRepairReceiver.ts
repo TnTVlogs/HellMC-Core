@@ -1,4 +1,5 @@
 import { DistributionAPI } from '../../common/distribution/DistributionAPI'
+import { Ed25519Verifier } from '../../common/distribution/DistributionSignature'
 import { Asset } from '../Asset'
 import { DistributionIndexProcessor } from '../distribution/DistributionIndexProcessor'
 import { downloadQueue, getExpectedDownloadSize } from '../DownloadEngine'
@@ -6,7 +7,8 @@ import { MojangIndexProcessor } from '../mojang/MojangIndexProcessor'
 import { ErrorReply, Receiver } from './Receiver'
 import { LoggerUtil } from '../../util/LoggerUtil'
 import { IndexProcessor } from '../IndexProcessor'
-import { validateLocalFile } from '../../common/util/FileUtils'
+import { statfs } from 'fs/promises'
+import { ensureDir } from 'fs-extra'
 import { HTTPError, ParseError, ReadError, RequestError, TimeoutError } from 'got'
 
 const log = LoggerUtil.getLogger('FullRepairReceiver')
@@ -20,6 +22,7 @@ export interface ValidateTransmission {
     commonDirectory: string
     instanceDirectory: string
     devMode: boolean
+    signingKeys?: string[]
 }
 
 export interface DownloadTransmission {
@@ -51,6 +54,7 @@ export class FullRepairReceiver implements Receiver {
 
     private processors: IndexProcessor[] = []
     private assets: Asset[] = []
+    private commonDirectory: string | null = null
 
     public async execute(message: FullRepairTransmission): Promise<void> {
         
@@ -102,7 +106,8 @@ export class FullRepairReceiver implements Receiver {
             message.commonDirectory,
             message.instanceDirectory,
             null!, // The main process must refresh, this is a local pull only.
-            message.devMode
+            message.devMode,
+            message.signingKeys != null && message.signingKeys.length > 0 ? new Ed25519Verifier(message.signingKeys) : null
         )
     
         const distribution = await api.getDistributionLocalLoadOnly()
@@ -142,7 +147,28 @@ export class FullRepairReceiver implements Receiver {
         }
 
         this.assets = assets
+        this.commonDirectory = message.commonDirectory
         process.send!({ response: 'validateComplete', invalidCount: this.assets.length } as ValidateCompleteReply)
+    }
+
+    private async assertEnoughDiskSpace(requiredBytes: number): Promise<void> {
+        if(this.commonDirectory == null || requiredBytes <= 0) {
+            return
+        }
+        try {
+            await ensureDir(this.commonDirectory)
+            const stats = await statfs(this.commonDirectory)
+            const available = stats.bavail * stats.bsize
+            // 10% + 200 MB of headroom for extraction and temporary files.
+            if(available < requiredBytes * 1.1 + 200 * 1024 * 1024) {
+                throw new Error(`Not enough free disk space (need about ${Math.ceil(requiredBytes / 1048576)} MB).`)
+            }
+        } catch(err) {
+            if(err instanceof Error && err.message.startsWith('Not enough')) {
+                throw err
+            }
+            log.warn('Could not check free disk space.', err)
+        }
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -150,6 +176,8 @@ export class FullRepairReceiver implements Receiver {
         const expectedTotalSize = getExpectedDownloadSize(this.assets)
     
         log.debug('Expected download size ' + expectedTotalSize)
+
+        await this.assertEnoughDiskSpace(expectedTotalSize)
         this.assets.forEach(({ id }) => log.debug(`Asset Requires Download: ${id}`))
 
         // Reduce load on IPC channel by sending only whole numbers.
@@ -164,10 +192,8 @@ export class FullRepairReceiver implements Receiver {
 
         for(const asset of this.assets) {
             if(asset.size !== receivedEach[asset.id]) {
-                log.warn(`Asset ${asset.id} declared a size of ${asset.size} bytes, but ${receivedEach[asset.id]} were received!`)
-                if(!await validateLocalFile(asset.path, asset.algo, asset.hash)) {
-                    log.error(`Hashes do not match, ${asset.id} may be corrupted.`)
-                }
+                // Hashes are verified per file by the DownloadEngine (a mismatch is retried once, then fails the download).
+                log.warn(`Asset ${asset.id} declared a size of ${asset.size} bytes, but ${receivedEach[asset.id]} were received.`)
             }
         }
 

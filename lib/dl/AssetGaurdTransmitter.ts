@@ -49,8 +49,28 @@ abstract class BaseTransmitter {
     abstract receiverName(): string
 
     public destroyReceiver(): void {
-        this.receiver.disconnect()
+        // El receptor pot haver-se desconnectat ja (resposta d'error): un segon `disconnect()` llança ERR_IPC_DISCONNECTED.
+        const receiver = this.receiver
         this.receiver = null!
+        if (receiver?.connected) {
+            try {
+                receiver.disconnect()
+            } catch (err) {
+                log.debug('Receiver already disconnected.', err)
+            }
+        }
+    }
+
+    /** Disconnects the receiver after an error reply and builds a real `Error` (with the friendly text) to reject with. */
+    protected failWith(message: { displayable?: string }): Error {
+        if (this.receiver?.connected) {
+            try {
+                this.receiver.disconnect()
+            } catch (err) {
+                log.debug('Receiver already disconnected.', err)
+            }
+        }
+        return new Error(message.displayable ?? 'Receiver error')
     }
 
     get childProcess(): ChildProcess {
@@ -66,7 +86,9 @@ export class FullRepair extends BaseTransmitter {
         private instanceDirectory: string,
         private launcherDirectory: string,
         private versionId: string,
-        private devMode: boolean
+        private devMode: boolean,
+        // PEM Ed25519 public keys: when non-empty, the receiver only accepts a signed distribution.
+        private signingKeys: string[] = []
     ) {
         super()
     }
@@ -93,11 +115,10 @@ export class FullRepair extends BaseTransmitter {
                         break
                     case 'error':
                         log.error('Received error.')
-                        this.receiver.disconnect()
-                        reject(message)
+                        reject(this.failWith(message))
                         break
                 }
-                
+
             }
 
             this.receiver.on('message', onMessageHandle)
@@ -108,7 +129,8 @@ export class FullRepair extends BaseTransmitter {
                 instanceDirectory: this.instanceDirectory,
                 launcherDirectory: this.launcherDirectory,
                 versionId: this.versionId,
-                devMode: this.devMode
+                devMode: this.devMode,
+                signingKeys: this.signingKeys
             } as ValidateTransmission)
         })
 
@@ -132,8 +154,7 @@ export class FullRepair extends BaseTransmitter {
                         break
                     case 'error':
                         log.error('Received error.')
-                        this.receiver.disconnect()
-                        reject(message)
+                        reject(this.failWith(message))
                         break
                 }
             }
