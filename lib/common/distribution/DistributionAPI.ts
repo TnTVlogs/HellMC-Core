@@ -1,6 +1,6 @@
 import { resolve } from 'path'
 import { Distribution } from 'hellmc-distribution-types'
-import got, { RequestError } from 'got'
+import got, { HTTPError, RequestError } from 'got'
 import { LoggerUtil } from '../../util/LoggerUtil'
 import { RestResponse, handleGotError, RestResponseStatus } from '../rest/RestResponse'
 import { move, pathExists, readFile, remove, writeJson } from 'fs-extra'
@@ -100,7 +100,10 @@ export class DistributionAPI {
         const distro = await this._loadDistributionNullable()
 
         if(distro == null) {
-            // TODO Bubble this up nicer
+            if(this.signatureProblem) {
+                // Not a network problem: the distribution (or its .sig) is missing/invalid and nothing verified is cached.
+                throw new Error('DISTRIBUTION_SIGNATURE_INVALID: no distribution with a valid signature is available.')
+            }
             throw new Error('FATAL: Unable to load distribution from remote server or local disk.')
         }
 
@@ -108,6 +111,8 @@ export class DistributionAPI {
     }
 
     protected async _loadDistributionNullable(): Promise<Distribution | null> {
+
+        this.signatureProblem = false
 
         let distro
 
@@ -135,6 +140,9 @@ export class DistributionAPI {
 
     /** Raw bytes + signature of the last verified remote download, written to disk verbatim so they can be re-verified. */
     private lastVerified: { raw: Buffer, signature: Buffer } | null = null
+
+    /** Set when the last attempt failed because of the signature (missing .sig, invalid, or unsigned cache), not the network. */
+    private signatureProblem = false
 
     protected async pullRemote(): Promise<RestResponse<Distribution | null>> {
 
@@ -200,11 +208,17 @@ export class DistributionAPI {
             const signature = Buffer.from(sig.body.toString('utf8').trim(), 'base64')
             if(!this.verifier!.verify(file.body, signature)) {
                 DistributionAPI.log.error('SECURITY: the remote distribution signature is INVALID. Ignoring it.')
+                this.signatureProblem = true
                 return { data: null, responseStatus: RestResponseStatus.ERROR } as RestResponse<Distribution | null>
             }
             this.lastVerified = { raw: file.body, signature }
+            this.signatureProblem = false
             return { data: JSON.parse(file.body.toString('utf8')) as Distribution, responseStatus: RestResponseStatus.SUCCESS }
         } catch(error) {
+            // A 404/403 on the .sig itself means the server is not signing (yet): a signature problem, not a connectivity one.
+            if(error instanceof HTTPError && error.request?.requestUrl?.toString().endsWith('.sig')) {
+                this.signatureProblem = true
+            }
             return handleGotError('Pull Remote (verified)', error as RequestError, DistributionAPI.log, () => null)
         }
     }
@@ -241,6 +255,7 @@ export class DistributionAPI {
                     && this.verifier.verify(rawBytes, Buffer.from((await readFile(sigPath, 'utf-8')).trim(), 'base64'))
                 if(!valid) {
                     DistributionAPI.log.error(`SECURITY: local distribution at ${path} has no valid signature. Ignoring it.`)
+                    this.signatureProblem = true
                     return null
                 }
             }

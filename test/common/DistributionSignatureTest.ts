@@ -66,7 +66,7 @@ describe('Distribution signature (S1)', () => {
         } catch(err) {
             message = (err as Error).message
         }
-        expect(message).to.contain('Unable to load distribution')
+        expect(message).to.contain('DISTRIBUTION_SIGNATURE_INVALID')
         expect(await pathExists(join(dir, 'distribution.json'))).to.equal(false)
     })
 
