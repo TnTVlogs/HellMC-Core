@@ -1,10 +1,8 @@
 name: Node.js CI
 
+# Només manual (Actions → Run workflow): no gasta minuts a cada push.
 on:
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
+  workflow_dispatch:
 
 jobs:
   build:
