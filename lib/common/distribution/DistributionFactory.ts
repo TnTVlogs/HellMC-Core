@@ -159,7 +159,9 @@ export class HeliosVersion {
     }
 
     private defaultJavaVersion(): [string, number] {
-        if(mcVersionAtLeast('1.20.5', this.rawVersion.minecraftVersion)) {
+        if(mcVersionAtLeast('26.1', this.rawVersion.minecraftVersion)) {
+            return ['>=25.x', 25]
+        } else if(mcVersionAtLeast('1.20.5', this.rawVersion.minecraftVersion)) {
             return ['>=21.x', 21]
         } else if(mcVersionAtLeast('1.17', this.rawVersion.minecraftVersion)) {
             return ['>=17.x', 17]
