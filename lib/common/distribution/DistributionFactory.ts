@@ -137,10 +137,12 @@ export class HeliosVersion {
 
         const merged: JavaVersionProps = {}
         for(let i=mergeableProps.length-1; i>=0; i--) {
-            if(mergeableProps[i] != null) {
-                merged.distribution = mergeableProps[i].distribution
-                merged.supported = mergeableProps[i].supported
-                merged.suggestedMajor = mergeableProps[i].suggestedMajor
+            const props = mergeableProps[i]
+            if(props != null) {
+                // Only override with defined values, so a partial platform entry doesn't wipe the base options.
+                if(props.distribution !== undefined) merged.distribution = props.distribution
+                if(props.supported !== undefined) merged.supported = props.supported
+                if(props.suggestedMajor !== undefined) merged.suggestedMajor = props.suggestedMajor
             }
         }
 
