@@ -35,7 +35,7 @@ function verifyResult(res: ServerStatus): void {
 
 const serversToCheck: [string, number?][] = [
     ['mc.hypixel.net'],
-    ['mc.westeroscraft.com', 1182],
+    // ['mc.westeroscraft.com', 1182], // ja no accepta connexions (2026-10): servidor extern fora de servei
     // 'stoneblock.colaian.tech' // SRV - commented out b/c may be shut down.
 ]
 
