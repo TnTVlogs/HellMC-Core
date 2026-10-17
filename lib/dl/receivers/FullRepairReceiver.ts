@@ -4,7 +4,7 @@ import { Asset } from '../Asset'
 import { DistributionIndexProcessor } from '../distribution/DistributionIndexProcessor'
 import { downloadQueue, getExpectedDownloadSize } from '../DownloadEngine'
 import { MojangIndexProcessor } from '../mojang/MojangIndexProcessor'
-import { ErrorReply, Receiver } from './Receiver'
+import { ErrorReply, Receiver, ReplyFn } from './Receiver'
 import { LoggerUtil } from '../../util/LoggerUtil'
 import { IndexProcessor } from '../IndexProcessor'
 import { statfs } from 'fs/promises'
@@ -56,15 +56,15 @@ export class FullRepairReceiver implements Receiver {
     private assets: Asset[] = []
     private commonDirectory: string | null = null
 
-    public async execute(message: FullRepairTransmission): Promise<void> {
+    public async execute(message: FullRepairTransmission, reply: ReplyFn): Promise<void> {
         
         // Route to the correct function
         switch(message.action) {
             case 'validate':
-                await this.validate(message)
+                await this.validate(message, reply)
                 break
             case 'download':
-                await this.download(message)
+                await this.download(message, reply)
                 break
         }
 
@@ -100,7 +100,7 @@ export class FullRepairReceiver implements Receiver {
         }
     }
 
-    public async validate(message: ValidateTransmission): Promise<void> {
+    public async validate(message: ValidateTransmission, reply: ReplyFn): Promise<void> {
         const api = new DistributionAPI(
             message.launcherDirectory,
             message.commonDirectory,
@@ -140,7 +140,7 @@ export class FullRepairReceiver implements Receiver {
         for(const processor of this.processors) {
             Object.values(await processor.validate(async () => {
                 completedStages++
-                process.send!({ response: 'validateProgress', percent: Math.trunc((completedStages/numStages)*100) } as ValidateProgressReply)
+                reply({ response: 'validateProgress', percent: Math.trunc((completedStages/numStages)*100) } as ValidateProgressReply)
             }))
                 .flatMap(asset => asset)
                 .forEach(asset => assets.push(asset))
@@ -148,7 +148,7 @@ export class FullRepairReceiver implements Receiver {
 
         this.assets = assets
         this.commonDirectory = message.commonDirectory
-        process.send!({ response: 'validateComplete', invalidCount: this.assets.length } as ValidateCompleteReply)
+        reply({ response: 'validateComplete', invalidCount: this.assets.length } as ValidateCompleteReply)
     }
 
     private async assertEnoughDiskSpace(requiredBytes: number): Promise<void> {
@@ -172,7 +172,7 @@ export class FullRepairReceiver implements Receiver {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public async download(_message: DownloadTransmission): Promise<void> {
+    public async download(_message: DownloadTransmission, reply: ReplyFn): Promise<void> {
         const expectedTotalSize = getExpectedDownloadSize(this.assets)
     
         log.debug('Expected download size ' + expectedTotalSize)
@@ -186,7 +186,7 @@ export class FullRepairReceiver implements Receiver {
             const nextPercent = Math.trunc((received/expectedTotalSize)*100)
             if(currentPercent !== nextPercent) {
                 currentPercent = nextPercent
-                process.send!({ response: 'downloadProgress', percent: currentPercent } as DownloadProgressReply)
+                reply({ response: 'downloadProgress', percent: currentPercent } as DownloadProgressReply)
             }
         })
 
@@ -201,7 +201,7 @@ export class FullRepairReceiver implements Receiver {
             await processor.postDownload()
         }
 
-        process.send!({ response: 'downloadComplete' } as DownloadCompleteReply)
+        reply({ response: 'downloadComplete' } as DownloadCompleteReply)
     }
 
 }

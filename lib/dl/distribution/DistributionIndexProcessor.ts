@@ -3,6 +3,7 @@ import { IndexProcessor } from '../IndexProcessor'
 import { AssetGuardError } from '../AssetGuardError'
 import { validateLocalFile, getVersionJsonPath} from '../../common/util/FileUtils'
 import { Asset, HashAlgo } from '../Asset'
+import { resolveArtifactHash } from './ArtifactHash'
 import { HeliosDistribution, HeliosModule, HeliosVersion } from '../../common/distribution/DistributionFactory'
 import { Type } from 'hellmc-distribution-types'
 import { mcVersionAtLeast } from '../../common/util/MojangUtils'
@@ -49,13 +50,16 @@ export class DistributionIndexProcessor extends IndexProcessor {
 
     private async validateModules(modules: HeliosModule[], accumulator: Asset[]): Promise<void> {
         for(const module of modules) {
-            const hash = module.rawModule.artifact.MD5
+            // Throws if the module has no (valid) sha256 and is not explicitly untracked.
+            const resolved = resolveArtifactHash(module.rawModule.id, module.rawModule.artifact)
+            const hash = resolved?.hash
+            const algo = resolved?.algo ?? HashAlgo.SHA256
 
-            if(!await validateLocalFile(module.getPath(), HashAlgo.MD5, hash)) {
+            if(!await validateLocalFile(module.getPath(), algo, hash)) {
                 accumulator.push({
                     id: module.rawModule.id,
                     hash: hash,
-                    algo: HashAlgo.MD5,
+                    algo: algo,
                     size: module.rawModule.artifact.size,
                     url: module.rawModule.artifact.url,
                     path: module.getPath()

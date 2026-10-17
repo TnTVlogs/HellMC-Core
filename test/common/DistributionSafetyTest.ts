@@ -14,7 +14,7 @@ function version(id: string, artifactPath?: string): unknown {
             id: 'net.hellmc:thing:1.0.0',
             name: 'thing',
             type: 'File',
-            artifact: { size: 1, MD5: 'abc', url: 'https://example.com/thing', ...(artifactPath != null ? { path: artifactPath } : {}) }
+            artifact: { size: 1, sha256: 'a'.repeat(64), url: 'https://example.com/thing', ...(artifactPath != null ? { path: artifactPath } : {}) }
         }]
     }
 }

@@ -12,7 +12,7 @@ import { HashAlgo } from '../../lib/dl/Asset'
 describe('DownloadEngine', () => {
 
     const body = Buffer.from('hello hellmc')
-    const goodHash = createHash('md5').update(body).digest('hex')
+    const goodHash = createHash('sha256').update(body).digest('hex')
     let server: Server
     let base = ''
     let dir = ''
@@ -78,7 +78,7 @@ describe('DownloadEngine', () => {
     })
 
     it('rejects a file whose hash does not match and removes it', async () => {
-        const asset = { id: 'bad', url: `${base}/bad`, path: join(dir, 'bad.bin'), size: 16, algo: HashAlgo.MD5, hash: goodHash }
+        const asset = { id: 'bad', url: `${base}/bad`, path: join(dir, 'bad.bin'), size: 16, algo: HashAlgo.SHA256, hash: goodHash }
         let message = ''
         try {
             await downloadQueue([asset], () => undefined)
@@ -89,8 +89,14 @@ describe('DownloadEngine', () => {
         expect(await readdir(dir)).to.deep.equal([])
     })
 
+    it('compares hashes case-insensitively (uppercase hex in the distribution is accepted)', async () => {
+        const asset = { id: 'up', url: `${base}/ok`, path: join(dir, 'up.bin'), size: body.length, algo: HashAlgo.SHA256, hash: goodHash.toUpperCase() }
+        const totals = await downloadQueue([asset], () => undefined)
+        expect(totals.up).to.equal(body.length)
+    })
+
     it('accepts a file whose hash matches', async () => {
-        const asset = { id: 'ok', url: `${base}/ok`, path: join(dir, 'ok.bin'), size: body.length, algo: HashAlgo.MD5, hash: goodHash }
+        const asset = { id: 'ok', url: `${base}/ok`, path: join(dir, 'ok.bin'), size: body.length, algo: HashAlgo.SHA256, hash: goodHash }
         const totals = await downloadQueue([asset], () => undefined)
         expect(totals.ok).to.equal(body.length)
         expect((await readFile(join(dir, 'ok.bin'))).equals(body)).to.equal(true)

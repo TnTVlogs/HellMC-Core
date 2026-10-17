@@ -31,7 +31,7 @@ export async function validateLocalFile(path: string, algo: string, hash?: strin
         }
         
         try {
-            return (await calculateHash(path, algo)) === hash
+            return (await calculateHash(path, algo)) === hash.toLowerCase()
         } catch(err) {
             log.error('Failed to calculate hash.', err)
         }

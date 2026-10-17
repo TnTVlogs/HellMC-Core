@@ -8,7 +8,7 @@ import { join } from 'path';
 
 export default defineConfig(
   {
-    ignores: ['**/dist/**', 'node_modules', 'eslint.config.mjs'],
+    ignores: ['**/dist/**', 'node_modules', 'eslint.config.mjs', 'test/dl/files/**/*.js'],
   },
   eslint.configs.recommended,
   tseslint.configs.recommendedTypeChecked,

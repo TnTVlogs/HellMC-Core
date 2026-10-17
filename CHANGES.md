@@ -2,6 +2,20 @@
 
 Fase 0 — fork & rename (see `docs/client-redesign/` in `HellMC-Client`).
 
+- **Receiver channel abstraction** (plan `docs/pendents/plans/02-runasnode-i-c13.md`, B23/S10): the transmitter no longer
+  calls `child_process.fork` directly. A `ReceiverSpawner` (new `dl/ReceiverChannel.ts`; default `NodeForkSpawner`) is
+  injected via `FullRepair.setDefaultSpawner()` or the constructor, so the Electron client can use `utilityProcess` and
+  disable the `RunAsNode` fuse while this library never imports `electron`. The child side is `receivers/ReceiverRuntime.ts`
+  (`parentPort` or `process.send`); receivers get a `reply()` function instead of calling `process.send`. The receiver name
+  travels in an `init` message (answered with `ready`), not only in `argv`. If the child dies, pending operations reject with
+  `RECEIVER_EXITED:`; `destroyReceiver()` is `kill()` (idempotent) and rejects pending ones with `LAUNCH_CANCELLED`.
+
+- **SHA-256 only for distribution modules** (plan `docs/pendents/plans/01-md5-a-sha256.md`, simplified):
+  `DistributionIndexProcessor` verifies `artifact.sha256` (new `dl/distribution/ArtifactHash.ts`,
+  `resolveArtifactHash`). A module with no `sha256` and no `untracked: true`, or with a malformed one, is refused with an
+  error whose message starts with `MODULE_HASH_MISSING:` / `MODULE_HASH_INVALID:`. `MD5` is no longer read.
+  `HashAlgo.MD5` remains only for the Corretto JDK checksum (S12). `validateLocalFile` compares hashes case-insensitively.
+
 - **Absorbed patches** previously applied via `patch-package` on the client
   (`patches/helios-core+2.3.0.patch`): explicit `got` timeouts on
   `DistributionAPI.pullRemote` and `DownloadEngine.downloadFile`, plus

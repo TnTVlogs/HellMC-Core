@@ -588,6 +588,9 @@ export async function latestCorretto(major: number, dataDir: string): Promise<As
     }
 
     const url = `https://corretto.aws/downloads/latest/amazon-corretto-${major}-${arch}-${sanitizedOS}-jdk.${ext}`
+    // S12: Corretto only publishes an MD5 here (same host as the binary, so it only detects corruption, not tampering).
+    // The only checksum endpoint known from the code is `latest_checksum` (MD5); no SHA-256 endpoint is assumed.
+    // Temurin/Adoptium (the default outside macOS) is verified with SHA-256.
     const md5url = `https://corretto.aws/downloads/latest_checksum/amazon-corretto-${major}-${arch}-${sanitizedOS}-jdk.${ext}`
     try {
         const res = await got.head(url)
