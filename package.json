@@ -1,6 +1,6 @@
 {
   "name": "hellmc-core",
-  "version": "3.0.0-hellmc.1",
+  "version": "3.0.0-hellmc.2",
   "description": "Fork of helios-core (LGPL-3.0), core mechanisms for the HellMC client. Based on helios-core by Daniel D. Scalzi.",
   "main": "dist/index.js",
   "scripts": {

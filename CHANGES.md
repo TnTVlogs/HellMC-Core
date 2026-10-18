@@ -14,7 +14,11 @@ Fase 0 — fork & rename (see `docs/client-redesign/` in `HellMC-Client`).
   `DistributionIndexProcessor` verifies `artifact.sha256` (new `dl/distribution/ArtifactHash.ts`,
   `resolveArtifactHash`). A module with no `sha256` and no `untracked: true`, or with a malformed one, is refused with an
   error whose message starts with `MODULE_HASH_MISSING:` / `MODULE_HASH_INVALID:`. `MD5` is no longer read.
-  `HashAlgo.MD5` remains only for the Corretto JDK checksum (S12). `validateLocalFile` compares hashes case-insensitively.
+  `validateLocalFile` compares hashes case-insensitively.
+
+- **Corretto JDK verified with SHA-256** (S12): `latestCorretto` reads `https://corretto.aws/downloads/latest_sha256/<file>`
+  (documented by Amazon) instead of the MD5 `latest_checksum`; an answer that is not 64 hex chars yields `null`.
+  `HashAlgo.MD5` is removed.
 
 - **Absorbed patches** previously applied via `patch-package` on the client
   (`patches/helios-core+2.3.0.patch`): explicit `got` timeouts on

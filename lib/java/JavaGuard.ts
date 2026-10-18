@@ -563,6 +563,8 @@ export async function latestAdoptium(major: number, dataDir: string): Promise<As
     }
 }
 
+const CORRETTO_BASE = 'https://corretto.aws/downloads'
+
 export async function latestCorretto(major: number, dataDir: string): Promise<Asset | null> {
 
     let sanitizedOS: string, ext: string
@@ -587,22 +589,27 @@ export async function latestCorretto(major: number, dataDir: string): Promise<As
             break
     }
 
-    const url = `https://corretto.aws/downloads/latest/amazon-corretto-${major}-${arch}-${sanitizedOS}-jdk.${ext}`
-    // S12: Corretto only publishes an MD5 here (same host as the binary, so it only detects corruption, not tampering).
-    // The only checksum endpoint known from the code is `latest_checksum` (MD5); no SHA-256 endpoint is assumed.
-    // Temurin/Adoptium (the default outside macOS) is verified with SHA-256.
-    const md5url = `https://corretto.aws/downloads/latest_checksum/amazon-corretto-${major}-${arch}-${sanitizedOS}-jdk.${ext}`
+    const url = `${CORRETTO_BASE}/latest/amazon-corretto-${major}-${arch}-${sanitizedOS}-jdk.${ext}`
+    // S12: Corretto publica el SHA-256 a `latest_sha256/<mateix nom>` (documentat a la guia d'usuari de Corretto, columna
+    // "Checksum (SHA256)"; comprovat 2026-10-18). L'endpoint MD5 (`latest_checksum`) ja no s'usa. El checksum surt del
+    // mateix host que el binari: detecta corrupcio, no manipulacio per qui controli el host.
+    const sha256url = `${CORRETTO_BASE}/latest_sha256/amazon-corretto-${major}-${arch}-${sanitizedOS}-jdk.${ext}`
     try {
         const res = await got.head(url)
-        const checksum = await got.get(md5url)
+        const checksum = await got.get(sha256url)
+        const hash = checksum.body.trim().toLowerCase()
+        if(!/^[0-9a-f]{64}$/.test(hash)) {
+            log.error(`Corretto returned an invalid SHA-256 checksum for JDK ${major} (${sanitizedOS} ${arch}).`)
+            return null
+        }
         if(res.statusCode === 200) {
             const name = url.substring(url.lastIndexOf('/')+1)
             return {
                 url: url,
                 size: parseInt(res.headers['content-length']!),
                 id: name,
-                hash: checksum.body,
-                algo: HashAlgo.MD5,
+                hash,
+                algo: HashAlgo.SHA256,
                 path: join(getLauncherRuntimeDir(dataDir), name)
             }
         } else {
